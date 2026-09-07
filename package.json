@@ -1,0 +1,36 @@
+{
+  "name": "pi-journal",
+  "version": "0.1.0",
+  "description": "Audit-logged edit and write tools for the pi coding agent. Every file mutation is recorded to <cwd>/.pi/tool.log.",
+  "author": "Your Name",
+  "license": "MIT",
+  "keywords": ["pi-package"],
+  "main": "extensions/index.ts",
+  "files": [
+    "extensions",
+    "src",
+    "package.json",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "typebox": "^1.3.7"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.84.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.4",
+    "@types/node": "^25.3.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  },
+  "pi": {
+    "extensions": [
+      "extensions/index.ts"
+    ]
+  }
+}
