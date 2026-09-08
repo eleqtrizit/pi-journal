@@ -1,5 +1,15 @@
 # pi-journal
 
+## Quick Start
+
+```bash
+pi install https://github.com/eleqtrizit/pi-journal
+```
+
+Main command: `/journal-compact` — when the session context is full, it rewrites
+the live context with every journalled read/edit/write replaced by `LOG:` lines
+and reports the token savings (46–91% on real sessions). See [Commands](#commands).
+
 Audit trail for file mutations in [pi](https://pi.dev) coding agent sessions.
 
 It registers tools named `edit` and `write`. Because registering a tool under a
