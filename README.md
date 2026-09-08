@@ -59,6 +59,45 @@ Add `*.log` to `.gitignore` if you want the trail kept out of version control.
 
 `/journal [n]` — show the last `n` records (default 25).
 
+`/journal-compact` — rewrite the active LLM context so that every `read`,
+`edit`, and `write` tool call and its result is replaced by a compact `LOG:`
+line inside the assistant's own text, then merge consecutive same-role messages
+so the sequence collapses as far as possible:
+
+```
+assistant: "LOG: File read src/app.ts
+LOG: Extract the append writer out of the tool handler
+LOG: Create tests/app.test.ts
+
+Reader and writer are now separate helpers, ..."
+```
+
+- `edit`/`write` become `LOG: <description>` — the rationale the model supplied
+  with the call. A missing description degrades to `LOG: <tool> <path>`.
+- `read` becomes `LOG: File read <path>`.
+- The 10 most recent journalled tool results are kept verbatim — that fresh
+  output is still needed as working context and is not worth losing. Older
+  pairs beyond that window are the ones compacted.
+- Non-journalled tool pairs (bash, grep, …) are kept intact so their
+  call/result pairing stays API-valid.
+- Thinking blocks are dropped: per-turn reasoning whose tool calls are gone has
+  no value.
+
+**First pass is evaluation-only.** The compacted context is written as a valid
+and `parentSession` pointing back at the original. The live session is never
+modified. The command reports measured savings (tool calls replaced, characters
+dropped, estimated tokens before → after, serialized context bytes before →
+after) and prints the `pi --session <path>`
+invocation to open the compacted copy side by side.
+
+Measured on real sessions: 46–91% estimated-token reduction.
+
+Session-file notes: entries are re-chained linearly (each entry's parent is its
+predecessor); rewritten assistant messages carry zeroed usage because a merged
+message spans turns, so per-turn usage is meaningless — after resuming the
+compacted file, the first real response re-anchors pi's context estimates.
+
+
 ## Design decisions
 
 **`edit` takes one `oldText`/`newText` pair, not pi's `edits[]` array.** This is

@@ -55,14 +55,25 @@ not filesystem activity.
 
 | Path | Role |
 | ---- | ---- |
-| `extensions/index.ts` | Entry point: the two tool overrides and the `/journal` command |
+| `extensions/index.ts` | Entry point: the two tool overrides, `/journal`, `/journal-compact` |
 | `src/utils/journal.ts` | Log path, append writer, bounded reader |
+| `src/utils/compact.ts` | Context compaction: LOG-line transform, session builder, writer |
 | `tests/journal.test.ts` | Vitest coverage of the writer and reader |
+| `tests/compact.test.ts` | Vitest coverage of the compaction transform and output file |
 | `README.md` | User-facing docs, including the schema rationale |
 
 ## Commands
 
 `/journal [n]` — show the last `n` records (default 25).
+
+`/journal-compact` — write the active context rewritten (read/edit/write tool
+calls and results replaced by `LOG:` lines, except the 10 most recent results
+which stay verbatim; messages coalesced) to
+`.pi/journal-compact/<timestamp>_<id>.jsonl` and report measured savings. The
+live session is untouched; see README. Transform lives in `src/utils/compact.ts`
+(`compactMessages` is pure and fully tested). Pass 2 (not implemented): adopt
+the rewrite in-place via `fork()` + `switchSession()`, or hook
+`session_before_compact`.
 
 ## Verification
 

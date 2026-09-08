@@ -15,8 +15,10 @@ import {
 	type ExtensionContext,
 	createWriteTool,
 	type WriteToolInput,
+	sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
+import { formatBytes, writeCompactedSession } from "../src/utils/compact";
 import {
 	DEFAULT_TAIL_LINES,
 	journalPath,
@@ -154,6 +156,45 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			ctx.ui.notify(`Last ${entries.length} journal entries:\n${entries.join("\n")}`, "info");
+		},
+	});
+
+	pi.registerCommand("journal-compact", {
+		description:
+			"Rewrite the active context with read/edit/write calls replaced by LOG lines, saved as a new session file under .pi/journal-compact/ (the live session is untouched — evaluation first pass).",
+		handler: async (_args, ctx) => {
+			const sessionManager = ctx.sessionManager;
+			const sourceHeader = sessionManager.getHeader();
+			if (sourceHeader === null) {
+				ctx.ui.notify("Nothing to compact — the session has not been created yet.", "warning");
+				return;
+			}
+
+			const messages = sessionManager.buildContextEntries().flatMap(sessionEntryToContextMessages);
+			if (messages.length === 0) {
+				ctx.ui.notify("Nothing to compact — the context is empty.", "warning");
+				return;
+			}
+
+			const { path, stats } = await writeCompactedSession({
+				cwd: ctx.cwd,
+				sourceHeader,
+				sourceFile: sessionManager.getSessionFile(),
+				messages,
+			});
+
+			const saved = stats.tokensBefore > 0 ? Math.round((1 - stats.tokensAfter / stats.tokensBefore) * 100) : 0;
+			ctx.ui.notify(
+				`Compacted context written to ${path}\n` +
+					`${stats.droppedToolCalls} tool calls replaced by ${stats.logStatements} LOG statements ` +
+					`(${stats.logChars} LOG characters); ${stats.keptRecentResults} recent results kept verbatim; ` +
+					`${stats.droppedChars} characters of call/result payload dropped.\n` +
+					`Serialized context: ${formatBytes(stats.bytesBefore)} → ${formatBytes(stats.bytesAfter)} ` +
+					`(bytesBefore=${stats.bytesBefore}, bytesAfter=${stats.bytesAfter}).\n` +
+					`Estimated tokens: ${stats.tokensBefore} → ${stats.tokensAfter} (${saved}% smaller). ` +
+					`Evaluate with: pi --session ${path}`,
+				"info",
+			);
 		},
 	});
 }

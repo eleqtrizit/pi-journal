@@ -1,6 +1,6 @@
 {
   "name": "pi-journal",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Audit-logged edit and write tools for the pi coding agent. Every file mutation is recorded to <cwd>/.pi/tool.log.",
   "author": "Your Name",
   "license": "MIT",
