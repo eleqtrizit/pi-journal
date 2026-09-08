@@ -69,6 +69,8 @@ export interface CompactionStats {
 	logStatements: number;
 	/** Most recent journalled results kept verbatim, not counted as dropped. */
 	keptRecentResults: number;
+	/** Failed read/edit/write results ejected entirely (never kept, even among recent results). */
+	ejectedErrors: number;
 	/** Token estimate of the context before compaction. */
 	tokensBefore: number;
 	/** Token estimate of the compacted context. */
@@ -154,12 +156,12 @@ function hasToolCalls(message: AgentMessage): boolean {
 }
 
 /**
- * Identify journalled tool results that must survive compaction: the
- * `keepRecent` most recent ones, identified by toolCallId.
+ * Identify journalled tool results that must survive compaction: those inside
+ * the `keepRecent` most recent tool results of ANY tool, by toolCallId.
  *
  * @param messages - Input context messages
- * @param keepRecent - How many of the most recent results to keep
- * @returns toolCallIds whose calls and results stay verbatim
+ * @param keepRecent - How many of the most recent tool results (any tool) to keep
+ * @returns toolCallIds whose journalled calls and results stay verbatim
  */
 function recentJournalledResultIds(messages: AgentMessage[], keepRecent: number): Set<string> {
 	if (keepRecent <= 0) {
@@ -167,11 +169,28 @@ function recentJournalledResultIds(messages: AgentMessage[], keepRecent: number)
 	}
 	const ids: string[] = [];
 	for (const message of messages) {
-		if (message.role === "toolResult" && JOURNALED_TOOLS.has(message.toolName)) {
+		if (message.role === "toolResult") {
 			ids.push(message.toolCallId);
 		}
 	}
 	return new Set(ids.slice(-keepRecent));
+}
+
+/**
+ * Identify journalled tool results that failed, by toolCallId, so the LOG line
+ * replacing the paired call can be annotated with `FAILED`.
+ *
+ * @param messages - Input context messages
+ * @returns toolCallIds whose journalled call failed
+ */
+function failedJournalledResultIds(messages: AgentMessage[]): Set<string> {
+	const ids = new Set<string>();
+	for (const message of messages) {
+		if (message.role === "toolResult" && message.isError && JOURNALED_TOOLS.has(message.toolName)) {
+			ids.add(message.toolCallId);
+		}
+	}
+	return ids;
 }
 
 /**
@@ -189,6 +208,7 @@ function recentJournalledResultIds(messages: AgentMessage[], keepRecent: number)
 function shrinkAssistant(
 	message: AssistantMessage,
 	keepCallIds: ReadonlySet<string>,
+	failedCallIds: ReadonlySet<string>,
 	stats: CompactionStats,
 ): AssistantMessage | null {
 	const texts: TextContent[] = [];
@@ -202,7 +222,7 @@ function shrinkAssistant(
 				keptCalls.push(item);
 				continue;
 			}
-			logLines.push(line);
+			logLines.push(failedCallIds.has(item.id) ? `${line} — FAILED` : line);
 			stats.droppedToolCalls += 1;
 			stats.droppedChars += JSON.stringify(item.arguments ?? {}).length;
 			continue;
@@ -296,6 +316,7 @@ export function compactMessages(
 		logChars: 0,
 		logStatements: 0,
 		keptRecentResults: 0,
+		ejectedErrors: 0,
 		tokensBefore: estimateTotalTokens(messages),
 		tokensAfter: 0,
 		bytesBefore: serializedSize(messages),
@@ -304,12 +325,21 @@ export function compactMessages(
 
 	const keepRecent = options.keepRecentResults ?? KEEP_RECENT_RESULTS;
 	const keepCallIds = recentJournalledResultIds(messages, keepRecent);
-	stats.keptRecentResults = Math.min(keepRecent, keepCallIds.size);
+	stats.keptRecentResults = messages.filter(
+		(message) =>
+			message.role === "toolResult" &&
+			JOURNALED_TOOLS.has(message.toolName) &&
+			keepCallIds.has(message.toolCallId),
+	).length;
+	const failedCallIds = failedJournalledResultIds(messages);
 
 	const kept: AgentMessage[] = [];
 	for (const message of messages) {
 		if (message.role === "toolResult") {
 			if (JOURNALED_TOOLS.has(message.toolName) && !keepCallIds.has(message.toolCallId)) {
+				if (message.isError) {
+					stats.ejectedErrors += 1;
+				}
 				stats.droppedChars += contentChars(message.content);
 				continue;
 			}
@@ -317,7 +347,7 @@ export function compactMessages(
 			continue;
 		}
 		if (message.role === "assistant") {
-			const shrunk = shrinkAssistant(message, keepCallIds, stats);
+			const shrunk = shrinkAssistant(message, keepCallIds, failedCallIds, stats);
 			if (shrunk !== null) {
 				kept.push(shrunk);
 			}

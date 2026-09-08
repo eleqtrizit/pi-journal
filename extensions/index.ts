@@ -19,6 +19,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { formatBytes, replayCompactedMessages, writeCompactedSession } from "../src/utils/compact";
+import { pruneFailedToolResults } from "../src/utils/prune";
 import {
 	DEFAULT_TAIL_LINES,
 	journalPath,
@@ -91,6 +92,16 @@ async function journalled(
 }
 
 export default function (pi: ExtensionAPI) {
+	// Eject failed read/edit/write results from every provider request. Pairing
+	// stays valid (stubs, not deletions) and the session file keeps the originals.
+	pi.on("context", (event) => {
+		const { messages, stats } = pruneFailedToolResults(event.messages);
+		if (stats.ejected === 0) {
+			return;
+		}
+		return { messages };
+	});
+
 	pi.registerTool({
 		name: "edit",
 		label: "Edit",
@@ -188,6 +199,7 @@ export default function (pi: ExtensionAPI) {
 				`Compacted context written to ${path}\n` +
 					`${stats.droppedToolCalls} tool calls replaced by ${stats.logStatements} LOG statements ` +
 					`(${stats.logChars} LOG characters); ${stats.keptRecentResults} recent results kept verbatim; ` +
+					`${stats.ejectedErrors} failed edit/read/write results ejected; ` +
 					`${stats.droppedChars} characters of call/result payload dropped.\n` +
 					`Serialized context: ${formatBytes(stats.bytesBefore)} → ${formatBytes(stats.bytesAfter)} ` +
 					`(bytesBefore=${stats.bytesBefore}, bytesAfter=${stats.bytesAfter}).\n` +

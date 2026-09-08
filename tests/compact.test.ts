@@ -169,7 +169,72 @@ describe("compactMessages — LOG replacement", () => {
 	});
 });
 
+describe("compactMessages — failed results", () => {
+	it("keeps a recent failed result verbatim, ejects older ones, and counts them", () => {
+		const badEdit: ToolResultMessage = {
+			...toolResult("edit", "oldText not found:\n...huge trace...", "e1"),
+			isError: true,
+		};
+		const oldFailure: ToolResultMessage = {
+			...toolResult("read", "stack trace ".repeat(100), "old-e"),
+			isError: true,
+		};
+		const input: AgentMessage[] = [
+			assistant([call("read", { path: "src/old.ts" }, "old-e")]),
+			oldFailure,
+			// 10 more recent journalled results push oldFailure out of the keep window.
+			...Array.from({ length: 10 }, (_, index) => [
+				assistant([call("read", { path: `f${index}.ts` }, `r${index}`)]),
+				toolResult("read", `contents ${index}`, `r${index}`),
+			]).flat(),
+			assistant([call("edit", { description: "bad edit", path: "src/a.ts" }, "e1")]),
+			badEdit,
+		];
+		const { messages, stats } = compactMessagesDefault(input);
+
+		expect(stats.ejectedErrors).toBe(1); // oldFailure dropped, badEdit kept as recent
+		expect(stats.keptRecentResults).toBe(10);
+		const keptResults = messages.filter(
+			(message): message is ToolResultMessage => message.role === "toolResult",
+		);
+		expect(keptResults).toHaveLength(10); // window holds 10: r1..r9 + the recent failed edit
+		expect(keptResults.some((result) => result.toolCallId === "e1")).toBe(true);
+		expect(keptResults.some((result) => result.toolCallId === "r0")).toBe(false);
+		const logText = messages
+			.flatMap((message) => (message.role === "assistant" ? message.content : []))
+			.filter((item): item is Extract<typeof item, { type: "text" }> => item.type === "text")
+			.map((item) => item.text)
+			.join("\n");
+		expect(logText).toContain(`${LOG_PREFIX}File read src/old.ts — FAILED`);
+		expect(logText).not.toContain("huge trace");
+	});
+});
+
 describe("compactMessages — kept pairs", () => {
+	it("counts results of any tool toward the keep window", () => {
+		const input: AgentMessage[] = [
+			assistant([call("edit", { description: "old edit", path: "src/a.ts" }, "e1")]),
+			toolResult("edit", "ok", "e1"),
+		];
+		for (let index = 0; index < 10; index += 1) {
+			input.push(assistant([call("bash", { command: `cmd ${index}` }, `b${index}`)]));
+			input.push(toolResult("bash", `output ${index}`, `b${index}`));
+		}
+		const { messages, stats } = runCompact(input);
+
+		// The 10 bash results fill the window; the edit collapses to a LOG line
+		// and the bash pairs pass through untouched.
+		expect(stats.droppedToolCalls).toBe(1);
+		expect(stats.keptRecentResults).toBe(0);
+		expect(messages.some((message) => message.role === "toolResult" && message.toolName === "edit")).toBe(false);
+		expect(messages.filter((message) => message.role === "toolResult")).toHaveLength(10);
+		const logText = messages
+			.flatMap((message) => (message.role === "assistant" ? message.content : []))
+			.map((item) => (item.type === "text" ? item.text : ""))
+			.join("\n");
+		expect(logText).toContain(`${LOG_PREFIX}old edit`);
+	});
+
 	it("keeps the last 10 journalled results verbatim and drops older ones", () => {
 		const input: AgentMessage[] = [];
 		for (let index = 0; index < 12; index += 1) {
@@ -418,7 +483,7 @@ describe("stats shape", () => {
 		const { stats } = runCompact([user("a")]);
 		const keys = Object.keys(stats).sort();
 		expect(keys).toEqual(
-			["bytesAfter", "bytesBefore", "droppedChars", "droppedToolCalls", "keptRecentResults", "logChars", "logStatements", "tokensAfter", "tokensBefore"].sort(),
+			["bytesAfter", "bytesBefore", "droppedChars", "droppedToolCalls", "ejectedErrors", "keptRecentResults", "logChars", "logStatements", "tokensAfter", "tokensBefore"].sort(),
 		);
 		const typedStats: CompactionStats = stats;
 		expect(typedStats.tokensBefore).toBeGreaterThan(0);

@@ -24,6 +24,7 @@ interface RegisteredTool {
 function registeredTools(): RegisteredTool[] {
 	const captured: RegisteredTool[] = [];
 	const pi = {
+		on: () => undefined,
 		registerTool: (definition: RegisteredTool) => captured.push(definition),
 		registerCommand: () => undefined,
 	};

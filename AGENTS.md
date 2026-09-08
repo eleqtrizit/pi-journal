@@ -58,6 +58,7 @@ not filesystem activity.
 | `extensions/index.ts` | Entry point: the two tool overrides, `/journal`, `/journal-compact` |
 | `src/utils/journal.ts` | Log path, append writer, bounded reader |
 | `src/utils/compact.ts` | Context compaction: LOG-line transform, session builder, writer |
+| `src/utils/prune.ts` | Failed edit/read/write result pruning: pure stub transform used by the `context` event; count reported by `/journal-compact` |
 | `tests/journal.test.ts` | Vitest coverage of the writer and reader |
 | `tests/compact.test.ts` | Vitest coverage of the compaction transform and output file |
 | `README.md` | User-facing docs, including the schema rationale |
