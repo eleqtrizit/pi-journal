@@ -21,6 +21,7 @@ import {
 	CURRENT_SESSION_VERSION,
 	estimateTokens,
 	type SessionHeader,
+	type SessionManager,
 	type SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
@@ -435,6 +436,32 @@ export function compactDir(cwd: string): string {
 }
 
 /**
+ * Replay compacted context messages into a fresh session.
+ *
+ * Used to adopt a compaction live: `newSession({ setup })` a new session in
+ * pi's default session directory — a real session id, resume-picker visible —
+ * and replay the compacted messages into it. Compaction/branch summary
+ * messages cannot be appended as messages (pi stores them as top-level
+ * entries), so they are replayed as user text carrying the summary.
+ *
+ * @param sessionManager - Writable session being initialized
+ * @param messages - Compacted context messages, in conversation order
+ */
+export function replayCompactedMessages(sessionManager: SessionManager, messages: AgentMessage[]): void {
+	for (const message of messages) {
+		if (message.role === "compactionSummary" || message.role === "branchSummary") {
+			sessionManager.appendMessage({
+				role: "user",
+				content: message.summary,
+				timestamp: message.timestamp,
+			});
+			continue;
+		}
+		sessionManager.appendMessage(message as Parameters<SessionManager["appendMessage"]>[0]);
+	}
+}
+
+/**
  * Compact the active context and persist it as a new pi session file.
  *
  * The output lives at `<cwd>/.pi/journal-compact/<timestamp>_<id>.jsonl` and
@@ -445,7 +472,7 @@ export function compactDir(cwd: string): string {
  * @param options.sourceHeader - Header of the session being compacted
  * @param options.sourceFile - Path of the source session file (may be undefined for unsaved sessions)
  * @param options.messages - Active LLM context messages
- * @returns Output path and measured savings
+ * @returns Output path, compacted messages, and measured savings
  * @throws {@link Error} If the session cannot be written to disk
  */
 export async function writeCompactedSession(options: {
@@ -453,7 +480,7 @@ export async function writeCompactedSession(options: {
 	sourceHeader: SessionHeader;
 	sourceFile: string | undefined;
 	messages: AgentMessage[];
-}): Promise<{ path: string; stats: CompactionStats }> {
+}): Promise<{ path: string; messages: AgentMessage[]; stats: CompactionStats }> {
 	const { messages, stats } = compactMessages(options.messages);
 	const compacted = buildCompactedSession(options.sourceHeader, options.sourceFile, messages);
 
@@ -464,5 +491,5 @@ export async function writeCompactedSession(options: {
 	await mkdir(compactDir(options.cwd), { recursive: true });
 	await writeFile(path, lines.join(""), "utf-8");
 
-	return { path, stats };
+	return { path, messages, stats };
 }

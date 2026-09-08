@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parseSessionEntries, type SessionHeader } from "@earendil-works/pi-coding-agent";
+import { parseSessionEntries, sessionEntryToContextMessages, type SessionHeader } from "@earendil-works/pi-coding-agent";
 import {
 	buildCompactedSession,
 	compactDir,
@@ -10,6 +10,7 @@ import {
 	compactMessages as compactMessagesDefault,
 	type CompactionStats,
 	formatBytes,
+	replayCompactedMessages,
 	LOG_PREFIX,
 	writeCompactedSession,
 } from "../src/utils/compact";
@@ -442,5 +443,41 @@ describe("stats shape", () => {
 		expect(formatBytes(324)).toBe("324 B");
 		expect(formatBytes(13 * 1024 + 410)).toBe("13.4 KiB");
 		expect(formatBytes(2 * 1024 * 1024)).toBe("2.0 MiB");
+	});
+});
+
+describe("replayCompactedMessages", () => {
+	it("replays compacted messages into a session so the rebuilt context matches", async () => {
+		const { SessionManager } = await import("@earendil-works/pi-coding-agent");
+		const { messages } = runCompact([
+			user("a", { timestamp: Date.parse("2026-03-04T08:59:00Z") }),
+			assistant([call("read", { path: "a.ts" }, "r1")]),
+			toolResult("read", "old contents", "r1"),
+			assistant([{ type: "text", text: "seen it" }]),
+		]);
+
+		const sm = SessionManager.inMemory(workspace);
+		replayCompactedMessages(sm, messages);
+
+		const rebuilt = sm.buildContextEntries().flatMap(sessionEntryToContextMessages);
+		expect(rebuilt).toEqual(messages as never);
+		expect(sm.getEntries()).toHaveLength(messages.length);
+		expect(sm.getLeafId()).not.toBeNull();
+	});
+
+	it("replays summary messages as user text", async () => {
+		const { SessionManager } = await import("@earendil-works/pi-coding-agent");
+		const summary: AgentMessage = {
+			role: "compactionSummary",
+			summary: "earlier work summary",
+			tokensBefore: 1234,
+			timestamp: Date.parse("2026-03-04T08:00:00Z"),
+		} as never;
+		const sm = SessionManager.inMemory(workspace);
+		replayCompactedMessages(sm, [summary]);
+
+		const rebuilt = sm.buildContextEntries().flatMap(sessionEntryToContextMessages);
+		expect(rebuilt).toHaveLength(1);
+		expect(rebuilt[0]).toMatchObject({ role: "user", content: "earlier work summary" });
 	});
 });

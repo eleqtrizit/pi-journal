@@ -83,14 +83,22 @@ Reader and writer are now separate helpers, ..."
 - Thinking blocks are dropped: per-turn reasoning whose tool calls are gone has
   no value.
 
-**First pass is evaluation-only.** The compacted context is written as a valid
-and `parentSession` pointing back at the original. The live session is never
-modified. The command reports measured savings (tool calls replaced, characters
-dropped, estimated tokens before → after, serialized context bytes before →
-after) and prints the `pi --session <path>`
-invocation to open the compacted copy side by side.
+**The evaluation file.** The compacted context is also written as a valid pi
+session file to `<cwd>/.pi/journal-compact/<timestamp>_<id>.jsonl` — a new
+session id and `parentSession` pointing back at the original — for diffing and
+side-by-side review. The command reports measured savings (tool calls replaced,
+characters dropped, estimated tokens before → after, serialized context bytes
+before → after) and prints the original session path.
 
 Measured on real sessions: 46–91% estimated-token reduction.
+
+**Pass 2 is implemented — the compaction now adopts live.** After writing the
+evaluation file, the command starts a real pi session in the default session
+directory (normal session id, visible in the resume picker), replays the
+compacted messages into it via `newSession({ setup })` +
+`replayCompactedMessages()`, and switches the live context to it. The original
+session file is never modified; its path is printed in the report so you can
+go back with `pi --session <original>`.
 
 Session-file notes: entries are re-chained linearly (each entry's parent is its
 predecessor); rewritten assistant messages carry zeroed usage because a merged

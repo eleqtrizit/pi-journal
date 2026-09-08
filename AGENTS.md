@@ -69,11 +69,12 @@ not filesystem activity.
 `/journal-compact` — write the active context rewritten (read/edit/write tool
 calls and results replaced by `LOG:` lines, except the 10 most recent results
 which stay verbatim; messages coalesced) to
-`.pi/journal-compact/<timestamp>_<id>.jsonl` and report measured savings. The
-live session is untouched; see README. Transform lives in `src/utils/compact.ts`
-(`compactMessages` is pure and fully tested). Pass 2 (not implemented): adopt
-the rewrite in-place via `fork()` + `switchSession()`, or hook
-`session_before_compact`.
+`.pi/journal-compact/<timestamp>_<id>.jsonl` plus a live adopt: a real session
+in the default session directory (new session id, resume-picker visible),
+built by replaying the compacted messages through `newSession({ setup })` +
+`replayCompactedMessages()` (`src/utils/compact.ts`). Command reports measured
+savings. The original session is never modified. Transform lives in
+`src/utils/compact.ts` (`compactMessages` is pure and fully tested).
 
 ## Verification
 
