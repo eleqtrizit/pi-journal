@@ -5,11 +5,11 @@ and records every call to `<cwd>/.pi/tool.log`.
 
 ## Behaviour
 
-- Registering a tool under a built-in name replaces that built-in, so `edit` and
-  `write` here are the session's only versions of those tools.
-- Both tools keep the delegation to pi's real implementation
-  (`createEditTool` / `createWriteTool`), so diff rendering, validation and
-  truncation are unchanged.
+- The extension registers no tools. It journals successful `edit`/`write`
+  mutations from pi's `tool_result` events, so it composes with any edit/write
+  provider — pi's built-ins or an override such as pi-teams' hash-guarded fs
+  tools (`pi-teams/extensions/fs-tools.ts`), which own the read/edit/write tool
+  definitions and the `readHash` stale-write guard as of 2026-03-04.
 - The journal is written **after** the mutation succeeds. A journal failure
   (read-only volume, bad permissions) surfaces as a UI warning — it never turns
   a successful edit into a tool error.
@@ -55,7 +55,7 @@ not filesystem activity.
 
 | Path | Role |
 | ---- | ---- |
-| `extensions/index.ts` | Entry point: the two tool overrides, `/journal`, `/journal-compact` |
+| `extensions/index.ts` | Entry point: the `tool_result` journal observer, `/journal`, `/journal-compact` |
 | `src/utils/journal.ts` | Log path, append writer, bounded reader |
 | `src/utils/compact.ts` | Context compaction: LOG-line transform, session builder, writer |
 | `src/utils/prune.ts` | Failed edit/read/write result pruning: pure stub transform used by the `context` event; count reported by `/journal-compact` |

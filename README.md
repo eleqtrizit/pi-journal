@@ -12,9 +12,10 @@ and reports the token savings (46–91% on real sessions). See [Commands](#comma
 
 Audit trail for file mutations in [pi](https://pi.dev) coding agent sessions.
 
-It registers tools named `edit` and `write`. Because registering a tool under a
-built-in name replaces that built-in, every file mutation in the session is
-recorded to `<cwd>/.pi/tool.log` on top of pi's real implementation.
+It observes every `edit` and `write` tool result (pi's built-ins or an override
+such as pi-teams' hash-guarded fs tools) and records each successful mutation
+to `<cwd>/.pi/tool.log`. It registers no tools itself, so it composes with any
+edit/write provider.
 
 ## Why
 
@@ -130,7 +131,7 @@ Consequences accepted with that trade:
 
 - Batched multi-edit calls are no longer available; expect more tool calls for
   wide mechanical changes.
-- Pi's own `edit` prompt guidelines are replaced by this extension's.
+- Tool prompt guidelines come from whichever extension provides the tool.
 - The tool description, not the schema, is what steers the model back toward
   one targeted change at a time.
 
